@@ -1,4 +1,5 @@
 # IoT Greengrass HMI Demo — FANUC Robot Tic-Tac-Toe
+<img width="1264" height="1084" alt="image" src="https://github.com/user-attachments/assets/b5ae0827-7b9c-4384-b078-d77282bbe188" />
 
 A full-featured AWS IoT Greengrass v2 demo showcasing a voice-controlled Human-Machine Interface (HMI) for a FANUC robot arm playing Tic-Tac-Toe. Demonstrates edge AI, hybrid online/offline operation, real-time speech-to-text, and role-based access control — all running on a Greengrass-managed EC2 instance.
 
@@ -15,7 +16,7 @@ A full-featured AWS IoT Greengrass v2 demo showcasing a voice-controlled Human-M
 
 ## Architecture
 
-![Greengrass Architecture](docs/greengrass_architecture.png)
+
 
 ```
 ┌─────────────────────────── EC2 (t3.large, Greengrass v2) ───────────────────────────┐
