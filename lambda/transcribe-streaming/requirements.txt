@@ -1,0 +1,2 @@
+# No extra dependencies — uses only boto3 (provided by Lambda runtime)
+# boto3 is pre-installed in all Lambda Python runtimes

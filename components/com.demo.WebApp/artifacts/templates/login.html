@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In &mdash; IoT Greengrass HMI Demo</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f0f4f8;
+            color: #1a202c;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* ── Dark navy header ── */
+        header {
+            width: 100%;
+            background: #1a237e;
+            padding: 1.5rem 1rem;
+            text-align: center;
+        }
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.02em;
+        }
+        header p {
+            margin-top: 0.35rem;
+            font-size: 0.85rem;
+            color: #c5cae9;
+        }
+
+        main {
+            flex: 1;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            padding: 2.5rem 1rem;
+        }
+
+        /* ── Login card ── */
+        .card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+            padding: 2rem;
+            width: 100%;
+            max-width: 380px;
+            display: flex;
+            flex-direction: column;
+            gap: 1.1rem;
+        }
+        .card h2 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1a237e;
+            text-align: center;
+        }
+
+        .field { display: flex; flex-direction: column; gap: 0.4rem; }
+        .field label {
+            font-size: 0.72rem;
+            color: #718096;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+        .field input {
+            padding: 0.7rem 0.9rem;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            color: #1a202c;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .field input:focus { border-color: #4a90d9; }
+
+        .btn-login {
+            padding: 0.75rem 1.4rem;
+            background: #2563eb;
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-size: 0.98rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, opacity 0.2s;
+        }
+        .btn-login:hover { background: #1d4ed8; }
+        .btn-login:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .error-msg {
+            font-size: 0.85rem;
+            color: #b91c1c;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: 0.6rem 0.8rem;
+            display: none;
+        }
+        .error-msg.visible { display: block; }
+
+        .offline-badge {
+            align-self: center;
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #92400e;
+            background: #fef9c3;
+            border-radius: 999px;
+            padding: 0.3rem 0.8rem;
+            display: none;
+        }
+        .offline-badge.visible { display: inline-block; }
+
+        .hint {
+            font-size: 0.75rem;
+            color: #a0aec0;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>IoT Greengrass HMI Demo</h1>
+        <p>FANUC Robot Tic-Tac-Toe &mdash; Voice-Controlled HMI</p>
+    </header>
+
+    <main>
+        <div class="card">
+            <h2>Sign In</h2>
+
+            <div class="offline-badge" id="offlineBadge">&#9888;&#65039; Offline Mode</div>
+            <div class="error-msg" id="errorMsg"></div>
+
+            <form id="loginForm">
+                <div class="field">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" autocomplete="username" required>
+                </div>
+                <div class="field" style="margin-top: 0.9rem;">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" autocomplete="current-password" required>
+                </div>
+                <button type="submit" class="btn-login" id="submitBtn" style="margin-top: 1rem; width: 100%;">Sign In</button>
+            </form>
+
+            <p class="hint">Signed out? Contact your administrator for access.</p>
+        </div>
+    </main>
+
+    <script>
+        const form = document.getElementById('loginForm');
+        const errorMsg = document.getElementById('errorMsg');
+        const offlineBadge = document.getElementById('offlineBadge');
+        const submitBtn = document.getElementById('submitBtn');
+
+        function showError(message) {
+            errorMsg.textContent = message;
+            errorMsg.classList.add('visible');
+        }
+        function hideError() {
+            errorMsg.classList.remove('visible');
+        }
+        function setOffline(isOffline) {
+            offlineBadge.classList.toggle('visible', !!isOffline);
+        }
+
+        // If already logged in, skip straight to the app.
+        fetch('/me', { credentials: 'same-origin' })
+            .then(r => r.json())
+            .then(data => {
+                if (data && data.authenticated) {
+                    window.location.href = '/';
+                }
+            })
+            .catch(() => { /* /me unreachable — just show the login form */ });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideError();
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Signing in&hellip;';
+
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+
+            try {
+                const res = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ username, password }),
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    setOffline(data.online === false);
+                    window.location.href = '/';
+                    return;
+                }
+
+                setOffline(data.online === false);
+                showError(data.error || 'Login failed. Please try again.');
+            } catch (err) {
+                showError('Could not reach the server. Please try again.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Sign In';
+            }
+        });
+    </script>
+</body>
+</html>

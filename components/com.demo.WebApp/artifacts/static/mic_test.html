@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mic + Transcribe Pipeline Test</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #f0f4f8; color: #1a202c; padding: 32px; max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 6px; }
+  p.sub { color: #718096; font-size: .88rem; margin-bottom: 24px; }
+  .card { background: #fff; border-radius: 14px; box-shadow: 0 2px 12px rgba(0,0,0,.07);
+          padding: 22px; margin-bottom: 18px; }
+  h2 { font-size: .95rem; font-weight: 700; color: #4a5568; margin-bottom: 14px;
+       text-transform: uppercase; letter-spacing: .06em; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  button { padding: 9px 20px; border: none; border-radius: 9px; font-size: .9rem;
+           font-weight: 700; cursor: pointer; transition: all .15s; }
+  #btnRec   { background: #f5c518; color: #111; }
+  #btnRec.active { background: #ef4444; color: #fff; }
+  #btnSend  { background: #2563eb; color: #fff; }
+  #btnWs    { background: #059669; color: #fff; }
+  #btnWs.active { background: #dc2626; color: #fff; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .badge { font-size: .76rem; background: #ebf4ff; color: #2563eb;
+           padding: 3px 10px; border-radius: 999px; font-weight: 600; }
+  pre { background: #1e293b; color: #94a3b8; font-family: monospace; font-size: .73rem;
+        padding: 14px; border-radius: 10px; max-height: 320px; overflow-y: auto;
+        white-space: pre-wrap; word-break: break-all; margin: 0; }
+  audio { width: 100%; margin-top: 10px; display: none; }
+  .result { padding: 12px 16px; border-radius: 9px; font-size: .9rem; margin-top: 10px; display: none; }
+  .result.ok    { background: #f0fdf4; border: 1.5px solid #bbf7d0; color: #166534; }
+  .result.error { background: #fff1f2; border: 1.5px solid #fecdd3; color: #9f1239; }
+  .transcript-live { background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 9px;
+                     padding: 10px 14px; min-height: 40px; font-size: .9rem; color: #718096;
+                     font-style: italic; margin-top: 10px; }
+  .transcript-live.has-text { color: #1a202c; font-style: normal; }
+  label.lbl { font-weight: 600; font-size: .8rem; color: #4a5568; display: block; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+
+<h1>🎙️ Mic + Transcribe Pipeline Test</h1>
+<p class="sub">Open at <strong>http://localhost:8080/static/mic_test.html</strong>.
+  Tests all layers: recording → conversion → streaming.</p>
+
+<!-- STEP 1: Record -->
+<div class="card">
+  <h2>Step 1 — Record Audio</h2>
+  <div class="row">
+    <button id="btnRec" onclick="toggleRec()">⏺ Start Recording</button>
+    <span id="badge" class="badge" style="display:none">—</span>
+  </div>
+  <audio id="player" controls></audio>
+  <div id="recStats" style="font-size:.8rem;color:#718096;margin-top:8px;"></div>
+</div>
+
+<!-- STEP 2a: HTTP POST (complete clip) -->
+<div class="card">
+  <h2>Step 2a — HTTP POST /transcribe (complete clip, batch path)</h2>
+  <button id="btnSend" onclick="sendPost()" disabled>▶ Send via HTTP POST</button>
+  <div id="postResult" class="result"></div>
+</div>
+
+<!-- STEP 2b: WebSocket streaming -->
+<div class="card">
+  <h2>Step 2b — WebSocket /ws/transcribe (real-time streaming)</h2>
+  <p style="font-size:.82rem;color:#718096;margin-bottom:10px;">
+    Click Start Streaming, speak, click Stop Streaming. Partial transcripts appear live.
+  </p>
+  <div class="row">
+    <button id="btnWs" onclick="toggleWs()">🔴 Start Streaming</button>
+    <span id="wsBadge" class="badge" style="display:none">—</span>
+  </div>
+  <label class="lbl">Live Transcript</label>
+  <div id="liveTranscript" class="transcript-live">Waiting...</div>
+  <div id="wsResult" class="result"></div>
+</div>
+
+<!-- LOG -->
+<div class="card">
+  <h2>Log <span id="versionBadge" style="font-size:.7rem;background:#e2e8f0;color:#4a5568;padding:2px 8px;border-radius:6px;margin-left:8px;font-weight:500;vertical-align:middle;">v?</span></h2>
+  <pre id="log">Ready.\n</pre>
+</div>
+
+<script>
+var rec=null, chunks=[], audioBlob=null, mimeUsed='', startTime=0;
+var wsConn=null, wsRec=null, wsActive=false;
+var wsChunks=[], wsMimeUsed='';
+
+// ── Logging ──────────────────────────────────────────────────
+// Fetch and show version
+fetch('/').then(r=>r.text()).then(()=>{}).catch(()=>{});
+fetch('/version').then(r=>r.json()).then(d=>{
+  var b=document.getElementById('versionBadge');
+  if(b)b.textContent='v'+d.version;
+}).catch(()=>{
+  // fallback: show from page title hint
+});
+function log(msg){
+  var el=document.getElementById('log');
+  var ts=new Date().toISOString().slice(11,19);
+  el.textContent+='['+ts+'] '+msg+'\n';
+  el.scrollTop=el.scrollHeight;
+}
+
+// ── Step 1: Record ────────────────────────────────────────────
+function toggleRec(){
+  var btn=document.getElementById('btnRec');
+  if(rec&&rec.state==='recording'){
+    rec.stop(); return;
+  }
+  chunks=[];audioBlob=null;
+  document.getElementById('btnSend').disabled=true;
+  document.getElementById('player').style.display='none';
+  document.getElementById('postResult').style.display='none';
+  document.getElementById('badge').style.display='none';
+  document.getElementById('log').textContent='';
+  document.getElementById('recStats').textContent='';
+
+  navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+    var mimes=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus',''];
+    mimeUsed=mimes.find(function(m){return !m||MediaRecorder.isTypeSupported(m);})||'';
+    log('getUserMedia OK');
+    log('mimeType: '+(mimeUsed||'(default)'));
+    var opts=mimeUsed?{mimeType:mimeUsed}:{};
+    rec=new MediaRecorder(stream,opts);
+    log('Actual mimeType: '+rec.mimeType);
+    rec.ondataavailable=function(e){if(e.data&&e.data.size>0)chunks.push(e.data);};
+    rec.onstop=function(){
+      stream.getTracks().forEach(function(t){t.stop();});
+      var dur=((Date.now()-startTime)/1000).toFixed(1);
+      audioBlob=new Blob(chunks,{type:mimeUsed||'audio/webm'});
+      var kb=Math.round(audioBlob.size/1024);
+      log('STOP: '+audioBlob.size+'B ('+kb+'KB), dur='+dur+'s, type='+audioBlob.type);
+      log(kb>=2?'✅ Blob healthy':'⚠️ Blob very small — check mic');
+      document.getElementById('recStats').textContent='Size: '+kb+' KB | Type: '+audioBlob.type+' | Duration: '+dur+'s';
+      var url=URL.createObjectURL(audioBlob);
+      var p=document.getElementById('player'); p.src=url; p.style.display='block';
+      document.getElementById('btnSend').disabled=false;
+      document.getElementById('badge').textContent=kb+' KB';
+      document.getElementById('badge').style.display='inline';
+      btn.textContent='⏺ Start Recording'; btn.classList.remove('active');
+    };
+    rec.onerror=function(e){log('MediaRecorder error: '+e.error.name);};
+    rec.start(500);
+    startTime=Date.now();
+    btn.textContent='⏹ Stop Recording'; btn.classList.add('active');
+    document.getElementById('badge').textContent='Recording…';
+    document.getElementById('badge').style.display='inline';
+    log('Recording started (500ms chunks)...');
+  }).catch(function(e){log('getUserMedia ERROR: '+e.name+': '+e.message);});
+}
+
+// ── Step 2a: HTTP POST ────────────────────────────────────────
+function sendPost(){
+  if(!audioBlob){log('No blob — record first');return;}
+  var res=document.getElementById('postResult');
+  res.className='result ok'; res.style.display='block'; res.textContent='POSTing to /transcribe ...';
+  log('POST /transcribe: '+audioBlob.size+'B');
+  var t0=Date.now();
+  var fd=new FormData(); fd.append('audio',audioBlob,'mic.webm');
+  fetch('/transcribe',{method:'POST',credentials:'same-origin',body:fd})
+  .then(function(r){log('HTTP '+r.status+' ('+((Date.now()-t0)/1000).toFixed(1)+'s)');return r.json();})
+  .then(function(d){
+    var lat=((Date.now()-t0)/1000).toFixed(1);
+    log('Response: '+JSON.stringify(d,null,2));
+    if(d.error){
+      res.className='result error'; res.textContent='Error: '+d.error;
+    } else if(!d.transcript){
+      res.className='result error'; res.textContent='Empty transcript.';
+    } else {
+      res.className='result ok';
+      res.textContent='✅ "'+d.transcript+'" | lang='+d.language_code+' | '+lat+'s';
+    }
+  })
+  .catch(function(e){
+    log('Fetch error: '+e.message);
+    res.className='result error'; res.textContent='Fetch error: '+e.message;
+  });
+}
+
+// ── Step 2b: WebSocket streaming ─────────────────────────────
+function toggleWs(){
+  var btn=document.getElementById('btnWs');
+  if(wsActive){
+    // Stop streaming
+    wsActive=false;
+    if(wsRec&&wsRec.state==='recording')wsRec.stop();
+    btn.textContent='🔴 Start Streaming'; btn.classList.remove('active');
+    document.getElementById('wsBadge').style.display='none';
+    return;
+  }
+
+  var wsUrl='ws://'+window.location.host+'/ws/transcribe';
+  log('WS connecting: '+wsUrl);
+  wsConn=new WebSocket(wsUrl);
+  wsConn.binaryType='arraybuffer';
+
+  var live=document.getElementById('liveTranscript');
+  var wsRes=document.getElementById('wsResult');
+  live.textContent='Connecting...'; live.className='transcript-live';
+  wsRes.style.display='none';
+  var finalParts=[];
+
+  wsConn.onopen=function(){
+    log('WS connected');
+    live.textContent='Listening...';
+    wsActive=true;
+    btn.textContent='⏹ Stop Streaming'; btn.classList.add('active');
+    document.getElementById('wsBadge').textContent='Streaming';
+    document.getElementById('wsBadge').style.display='inline';
+
+    // Start recording & converting to PCM via ScriptProcessor
+    navigator.mediaDevices.getUserMedia({audio:{channelCount:1}}).then(function(stream){
+      // Try to request 16kHz but read actual rate — browser may not honour request
+      var ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:16000});
+      var actualRate=ctx.sampleRate;
+      log('AudioContext sample rate: '+actualRate+'Hz');
+      // Send sample rate metadata to server before streaming audio
+      if(wsConn&&wsConn.readyState===WebSocket.OPEN){
+        wsConn.send(JSON.stringify({type:'init',sampleRate:actualRate}));
+      }
+      var src=ctx.createMediaStreamSource(stream);
+      var proc=ctx.createScriptProcessor(4096,1,1);
+      proc.onaudioprocess=function(e){
+        if(!wsActive)return;
+        var float32=e.inputBuffer.getChannelData(0);
+        var int16=new Int16Array(float32.length);
+        for(var i=0;i<float32.length;i++){
+          int16[i]=Math.max(-32768,Math.min(32767,float32[i]*32768));
+        }
+        if(wsConn&&wsConn.readyState===WebSocket.OPEN){
+          // Send raw binary PCM Int16 frames — server wraps in event-stream encoding
+          wsConn.send(int16.buffer);
+        }
+      };
+      src.connect(proc);
+      proc.connect(ctx.destination);
+      wsRec={stream:stream,ctx:ctx,src:src,proc:proc};
+      log('PCM streaming started ('+actualRate+'Hz, 16-bit mono)');
+    }).catch(function(e){log('getUserMedia error: '+e.message);});
+  };
+
+  wsConn.onmessage=function(evt){
+    try{
+      var msg=JSON.parse(evt.data);
+      if(msg.type==='partial'){
+        // Show accumulated finals + current partial (italicized)
+        var display=finalParts.join(' ');
+        if(display)display+=' ';
+        live.innerHTML='<span>'+display+'</span><span style="color:#718096;font-style:italic">'+msg.transcript+'</span>';
+        live.className='transcript-live has-text';
+      } else if(msg.type==='final'){
+        finalParts.push(msg.transcript);
+        live.textContent=finalParts.join(' '); live.className='transcript-live has-text';
+        log('FINAL: "'+msg.transcript+'" lang='+(msg.language_code||''));
+      } else if(msg.type==='error'){
+        log('WS error: '+msg.error);
+        wsRes.className='result error'; wsRes.textContent='Error: '+msg.error; wsRes.style.display='block';
+      } else if(msg.type==='done'){
+        wsDone=true;
+        log('WS done');
+        if(finalParts.length>0){
+          wsRes.className='result ok';
+          wsRes.textContent='✅ Final: "'+finalParts.join(' ')+'"';
+          wsRes.style.display='block';
+        }
+      }
+    }catch(e){log('WS parse error: '+e.message);}
+  };
+
+  var wsDone=false;
+  wsConn.onerror=function(e){
+    if(!wsDone){log('WS error');wsRes.className='result error';wsRes.textContent='WebSocket error';wsRes.style.display='block';}
+  };
+  wsConn.onclose=function(){
+    log('WS closed');
+    wsActive=false;
+    btn.textContent='🔴 Start Streaming'; btn.classList.remove('active');
+    document.getElementById('wsBadge').style.display='none';
+    if(wsRec){
+      wsRec.stream.getTracks().forEach(function(t){t.stop();});
+      wsRec.ctx.close();
+      wsRec=null;
+    }
+  };
+}
+</script>
+</body>
+</html>

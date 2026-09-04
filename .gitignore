@@ -1,0 +1,13 @@
+.deploy-staging/
+__pycache__/
+*.pyc
+.venv/
+.versions/
+# Stale Lambda directory (replaced by WebSocket streaming)
+# lambda/
+.env
+*.pem
+users.db
+auth.db
+*.db
+.DS_Store

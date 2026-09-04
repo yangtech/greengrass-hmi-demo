@@ -1,0 +1,63 @@
+---
+RecipeFormatVersion: "2020-01-25"
+
+ComponentName: com.demo.WebApp
+ComponentVersion: "1.4.1"
+ComponentDescription: >
+  Flask web application that takes user questions, calls Amazon Bedrock,
+  displays answers, and participates in IPC local pub/sub with a word-counter.
+ComponentPublisher: Demo
+ComponentDependencies:
+  aws.greengrass.Nucleus:
+    VersionRequirement: ">=2.5.0"
+  aws.greengrass.TokenExchangeService:
+    VersionRequirement: ">=2.0.0"
+
+ComponentConfiguration:
+  DefaultConfiguration:
+    bedrock_model_id: "amazon.nova-lite-v1:0"
+    region: "us-east-1"
+    http_port: 8080
+    transcribe_region: "us-east-1"
+    cognito_user_pool_id: ""  # Set via Greengrass deployment config or .env
+    cognito_client_id: ""  # Set via Greengrass deployment config or .env
+    flask_secret_key: ""  # MUST set before production use
+    accessControl:
+      aws.greengrass.ipc.pubsub:
+        com.demo.WebApp:pubsub:1:
+          policyDescription: "Allow publishing to demo/answer topic"
+          operations:
+            - "aws.greengrass#PublishToTopic"
+          resources:
+            - "demo/answer"
+        com.demo.WebApp:pubsub:2:
+          policyDescription: "Allow subscribing to demo/wordcount topic"
+          operations:
+            - "aws.greengrass#SubscribeToTopic"
+          resources:
+            - "demo/wordcount"
+        com.demo.WebApp:pubsub:3:
+          policyDescription: "Allow publishing to demo/game-move topic"
+          operations:
+            - "aws.greengrass#PublishToTopic"
+          resources:
+            - "demo/game-move"
+
+Manifests:
+  - Platform:
+      os: linux
+    Lifecycle:
+      Install:
+        Script: |
+          pip3 install --user -r {artifacts:path}/requirements.txt
+      Run:
+        Script: |
+          export PATH="/usr/local/bin:$PATH"
+          export BEDROCK_MODEL_ID="{configuration:/bedrock_model_id}"
+          export AWS_REGION="{configuration:/region}"
+          export HTTP_PORT="{configuration:/http_port}"
+          export TRANSCRIBE_REGION="{configuration:/transcribe_region}"
+          export COGNITO_USER_POOL_ID="{configuration:/cognito_user_pool_id}"
+          export COGNITO_CLIENT_ID="{configuration:/cognito_client_id}"
+          export FLASK_SECRET_KEY="{configuration:/flask_secret_key}"
+          python3 -u {artifacts:path}/server.py

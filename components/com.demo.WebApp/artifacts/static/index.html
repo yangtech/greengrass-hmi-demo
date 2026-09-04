@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Greengrass HMI Demo</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f0f4f8;
+            color: #1a202c;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2.5rem 1rem 4rem;
+        }
+
+        /* ── Header ── */
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        header h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #1a237e;
+            letter-spacing: -0.02em;
+        }
+        header p {
+            margin-top: 0.4rem;
+            font-size: 0.9rem;
+            color: #718096;
+        }
+
+        /* ── Main card ── */
+        .card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+            padding: 2rem;
+            width: 100%;
+            max-width: 780px;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* ── Question input row ── */
+        .input-row {
+            display: flex;
+            gap: 0.75rem;
+        }
+        .input-row input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 1rem;
+            color: #1a202c;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .input-row input:focus { border-color: #4a90d9; }
+        .input-row input::placeholder { color: #a0aec0; }
+
+        .btn-ask {
+            padding: 0.75rem 1.6rem;
+            background: #2563eb;
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, opacity 0.2s;
+            white-space: nowrap;
+        }
+        .btn-ask:hover { background: #1d4ed8; }
+        .btn-ask:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* ── Answer section ── */
+        .answer-section {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .answer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .answer-header span {
+            font-size: 0.8rem;
+            color: #718096;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .wordcount-badge {
+            font-size: 0.78rem;
+            background: #ebf4ff;
+            color: #2563eb;
+            font-weight: 600;
+            padding: 0.2rem 0.6rem;
+            border-radius: 999px;
+            display: none;
+        }
+        .wordcount-badge.visible { display: inline-block; }
+
+        .answer-box {
+            background: #f8fafc;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 1.1rem 1.25rem;
+            min-height: 120px;
+            font-size: 0.97rem;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: #1a202c;
+            transition: border-color 0.2s;
+        }
+        .answer-box.empty { color: #a0aec0; font-style: italic; }
+        .answer-box.loading { color: #718096; }
+
+        /* ── Divider ── */
+        .divider {
+            height: 1px;
+            background: #e2e8f0;
+        }
+
+        /* ── TTS section ── */
+        .tts-section { display: flex; flex-direction: column; gap: 0.5rem; }
+        .tts-label {
+            font-size: 0.8rem;
+            color: #718096;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        #tts { width: 100%; }
+
+        /* Override tts-widget styles to match our card */
+        #tts textarea {
+            width: 100% !important;
+            border: 1.5px solid #e2e8f0 !important;
+            border-radius: 10px !important;
+            padding: 0.85rem 1rem !important;
+            font-size: 0.95rem !important;
+            font-family: inherit !important;
+            resize: vertical;
+            color: #1a202c !important;
+            background: #f8fafc !important;
+        }
+        #tts textarea:focus { border-color: #4a90d9 !important; outline: none !important; }
+
+        #tts .tts-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-top: 0.6rem;
+            flex-wrap: wrap;
+        }
+        #tts select {
+            flex: 1;
+            min-width: 180px;
+            padding: 0.6rem 0.9rem !important;
+            border: 1.5px solid #e2e8f0 !important;
+            border-radius: 8px !important;
+            font-size: 0.9rem !important;
+            background: #fff !important;
+            color: #1a202c !important;
+        }
+        #tts button[type=button] {
+            padding: 0.6rem 1.4rem !important;
+            background: #059669 !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 8px !important;
+            font-size: 0.9rem !important;
+            font-weight: 600 !important;
+            cursor: pointer !important;
+            transition: background 0.2s !important;
+        }
+        #tts button[type=button]:hover { background: #047857 !important; }
+        #tts audio { width: 100%; margin-top: 0.6rem; }
+
+        /* ── SSE status pill ── */
+        .sse-pill {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.75rem;
+            color: #a0aec0;
+            align-self: flex-start;
+        }
+        .sse-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: #cbd5e0;
+            flex-shrink: 0;
+        }
+        .sse-dot.connected { background: #48bb78; }
+        .sse-dot.error     { background: #fc8181; }
+
+        /* ── Spinner ── */
+        .spinner {
+            display: inline-block;
+            width: 14px; height: 14px;
+            border: 2px solid #e2e8f0;
+            border-top-color: #4a90d9;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+            margin-right: 0.4rem;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Collapsible debug panel ── */
+        .collapsible-wrap {
+            width: 100%;
+            max-width: 780px;
+            margin-bottom: 1rem;
+        }
+        .btn-toggle-debug {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            background: none;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 0.5rem 1rem;
+            font-size: 0.82rem;
+            color: #718096;
+            font-weight: 600;
+            cursor: pointer;
+            transition: border-color 0.2s, color 0.2s;
+        }
+        .btn-toggle-debug:hover { border-color: #4a90d9; color: #4a90d9; }
+        .toggle-chevron {
+            display: inline-block;
+            transition: transform 0.3s;
+        }
+        .toggle-chevron.open { transform: rotate(180deg); }
+        .collapsible-body {
+            overflow: hidden;
+            max-height: 0;
+            transition: max-height 0.4s ease, margin-top 0.3s;
+        }
+        .collapsible-body.open {
+            max-height: 3000px;
+            margin-top: 0.75rem;
+        }
+
+        /* ── Robot Control Panel ── */
+        /* (Replaced by game panel inline styles) */
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>IoT Greengrass HMI Demo</h1>
+        <p>FANUC Robot Tic-Tac-Toe &mdash; Voice-Controlled HMI</p>
+    </header>
+
+    <!-- GAME PANEL -->
+    <!-- FANUC TIC-TAC-TOE GAME PANEL -->
+    <div class="game-card" style="background:#fff;border-radius:16px;box-shadow:0 2px 16px rgba(0,0,0,.08);padding:1.75rem;width:100%;max-width:900px;display:flex;flex-direction:column;gap:1.25rem;margin-bottom:1.25rem;">
+
+      <!-- Top button row removed: mic is inline with input, reset is at bottom -->
+
+      <!-- ── Online/Offline Mode Toggle ── -->
+      <div id="modeBar" style="display:flex;align-items:center;justify-content:space-between;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;padding:.6rem 1rem;">
+        <span id="modeBadge" style="font-size:.85rem;font-weight:700;color:#374151;">🌐 Cloud Mode</span>
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;user-select:none;">
+          <span style="font-size:.78rem;color:#718096;">Offline</span>
+          <div style="position:relative;width:42px;height:22px;display:inline-block;">
+            <input type="checkbox" id="modeToggle" style="opacity:0;width:0;height:0;position:absolute;" onchange="handleModeToggle(this.checked)"/>
+            <span id="modeSlider" style="position:absolute;top:0;left:0;right:0;bottom:0;background:#cbd5e0;border-radius:22px;transition:.25s;cursor:pointer;"></span>
+            <span id="modeKnob" style="position:absolute;top:2px;left:2px;width:18px;height:18px;background:#fff;border-radius:50%;transition:.25s;box-shadow:0 1px 3px rgba(0,0,0,.25);pointer-events:none;"></span>
+          </div>
+        </label>
+        <span id="aiModeLabel" style="font-size:.78rem;color:#059669;font-weight:600;">☁️ Bedrock AI</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+        <!-- Left: USER INPUT -->
+        <div style="display:flex;flex-direction:column;gap:.0rem;">
+          <div style="font-size:.72rem;color:#718096;font-weight:600;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.5rem;">User Input</div>
+          <div style="font-size:.68rem;color:#a0aec0;font-weight:500;margin-bottom:.3rem;display:flex;align-items:center;gap:.4rem;">
+            <span style="background:#fef9c3;color:#92400e;border-radius:4px;padding:.1rem .4rem;font-size:.65rem;font-weight:700;">Option 1</span>
+            Speak into the microphone
+          </div>
+          <div style="display:flex;gap:.6rem;align-items:stretch;margin-bottom:.5rem;">
+            <div style="flex:1;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;padding:.7rem .85rem;min-height:60px;font-size:.88rem;color:#a0aec0;font-style:italic;" id="transcript">Waiting for microphone input&hellip;</div>
+            <button style="background:#f5c518;color:#111;border:none;border-radius:10px;padding:.65rem 1rem;font-size:.88rem;font-weight:700;cursor:pointer;white-space:nowrap;align-self:stretch;" id="micBtn2" onclick="toggleMic()">&#127908; Mic</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:.6rem;margin:.15rem 0 .5rem;">
+            <div style="flex:1;height:1px;background:#e2e8f0;"></div>
+            <span style="font-size:.72rem;color:#a0aec0;font-weight:600;text-transform:uppercase;letter-spacing:.08em;background:#fff;padding:0 .3rem;">or</span>
+            <div style="flex:1;height:1px;background:#e2e8f0;"></div>
+          </div>
+          <div style="font-size:.68rem;color:#a0aec0;font-weight:500;margin-bottom:.3rem;display:flex;align-items:center;gap:.4rem;">
+            <span style="background:#dbeafe;color:#1e40af;border-radius:4px;padding:.1rem .4rem;font-size:.65rem;font-weight:700;">Option 2</span>
+            Type a command
+          </div>
+          <div style="display:flex;gap:.6rem;align-items:center;margin-bottom:.8rem;">
+            <input type="text" id="commandInput" placeholder="Type a command..." style="flex:1;padding:.65rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.9rem;color:#1a202c;outline:none;" />
+            <button style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:.65rem 1.2rem;font-size:.88rem;font-weight:600;cursor:pointer;white-space:nowrap;" id="sendBtn" onclick="sendCommand()">Send</button>
+          </div>
+          <div style="font-size:.72rem;color:#718096;font-weight:600;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.3rem;">AI Response</div>
+          <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;padding:.85rem 1rem;flex:1;min-height:80px;font-size:.88rem;color:#a0aec0;font-style:italic;" id="aiResponse">AI model response will appear here&hellip;</div>
+        </div>
+        <!-- Right: RMI log -->
+        <div style="display:flex;flex-direction:column;">
+          <div style="font-size:.72rem;color:#718096;font-weight:600;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.3rem;">Robot Python Script (R-50iA) &mdash; RMI Log</div>
+          <div style="background:#1e293b;border:1.5px solid #334155;border-radius:10px;padding:.85rem 1rem;height:320px;max-height:320px;min-height:320px;font-family:monospace;font-size:.75rem;color:#94a3b8;white-space:pre-wrap;overflow-y:auto;flex:none;" id="rmiLog"># RMI communication log
+# Waiting for connection&hellip;
+
+</div>
+        </div>
+      </div>
+
+      <div style="height:1px;background:#e2e8f0;"></div>
+
+      <!-- GAME CANVAS — single SVG viewBox 0 0 900 510 -->
+      <!-- Shoulder: (569,265) L1=210 L2=125 Rest: sh=-15 el=145 -->
+      <!-- Board: x=260-500 cells col300/380/460 row118/198/278 -->
+      <!-- Disks: y=393 x=260,320,380,440,500 label y=362 -->
+      <svg id="gameCanvas" viewBox="0 0 900 510"
+           style="width:100%;border-radius:8px;background:#fafafa;overflow:visible;">
+
+        <!-- Board x=260-500, y=78-318 -->
+        <text x="380" y="64" text-anchor="middle" font-size="10" font-weight="700" fill="#718096" letter-spacing="1">GAME BOARD</text>
+        <rect x="260" y="78" width="240" height="240" rx="4" fill="white" stroke="#1a202c" stroke-width="3"/>
+        <line x1="340" y1="78"  x2="340" y2="318" stroke="#94a3b8" stroke-width="1.5"/>
+        <line x1="420" y1="78"  x2="420" y2="318" stroke="#94a3b8" stroke-width="1.5"/>
+        <line x1="260" y1="158" x2="500" y2="158" stroke="#94a3b8" stroke-width="1.5"/>
+        <line x1="260" y1="238" x2="500" y2="238" stroke="#94a3b8" stroke-width="1.5"/>
+        <!-- Cell labels (telephone keypad: 7|8|9 top, 4|5|6 mid, 1|2|3 bot) -->
+        <text x="300" y="100" text-anchor="middle" font-size="11" fill="#cbd5e0" font-weight="600">7</text>
+        <text x="380" y="100" text-anchor="middle" font-size="11" fill="#cbd5e0" font-weight="600">8</text>
+        <text x="460" y="100" text-anchor="middle" font-size="11" fill="#cbd5e0" font-weight="600">9</text>
+        <text x="300" y="180" text-anchor="middle" font-size="11" fill="#cbd5e0" font-weight="600">4</text>
+        <text x="380" y="180" text-anchor="middle" font-size="11" fill="#cbd5e0" font-weight="600">5</text>
+        <text x="460" y="180" text-anchor="middle" font-size="11" fill="#cbd5e0" font-weight="600">6</text>
+        <text x="300" y="260" text-anchor="middle" font-size="11" fill="#cbd5e0" font-weight="600">1</text>
+        <text x="380" y="260" text-anchor="middle" font-size="11" fill="#cbd5e0" font-weight="600">2</text>
+        <text x="460" y="260" text-anchor="middle" font-size="11" fill="#cbd5e0" font-weight="600">3</text>
+        <!-- Invisible cell hit-targets -->
+        <rect class="svg-cell" data-cell="0" x="260" y="78"  width="80" height="80" fill="transparent" cursor="pointer"/>
+        <rect class="svg-cell" data-cell="1" x="340" y="78"  width="80" height="80" fill="transparent" cursor="pointer"/>
+        <rect class="svg-cell" data-cell="2" x="420" y="78"  width="80" height="80" fill="transparent" cursor="pointer"/>
+        <rect class="svg-cell" data-cell="3" x="260" y="158" width="80" height="80" fill="transparent" cursor="pointer"/>
+        <rect class="svg-cell" data-cell="4" x="340" y="158" width="80" height="80" fill="transparent" cursor="pointer"/>
+        <rect class="svg-cell" data-cell="5" x="420" y="158" width="80" height="80" fill="transparent" cursor="pointer"/>
+        <rect class="svg-cell" data-cell="6" x="260" y="238" width="80" height="80" fill="transparent" cursor="pointer"/>
+        <rect class="svg-cell" data-cell="7" x="340" y="238" width="80" height="80" fill="transparent" cursor="pointer"/>
+        <rect class="svg-cell" data-cell="8" x="420" y="238" width="80" height="80" fill="transparent" cursor="pointer"/>
+        <!-- Placed pieces layer -->
+        <g id="svgPlacedPieces"/>
+
+        <!-- Disk supply: y=393 label y=362 x=260-500 -->
+        <text x="380" y="362" text-anchor="middle" font-size="10" font-weight="700" fill="#718096" letter-spacing="1">YOUR DISKS</text>
+        <circle id="svgDisk0" cx="260" cy="393" r="18" fill="#ef4444" stroke="#b91c1c" stroke-width="2"/>
+        <circle id="svgDisk1" cx="320" cy="393" r="18" fill="#3b82f6" stroke="#1d4ed8" stroke-width="2"/>
+        <circle id="svgDisk2" cx="380" cy="393" r="18" fill="#22c55e" stroke="#15803d" stroke-width="2"/>
+        <circle id="svgDisk3" cx="440" cy="393" r="18" fill="#f97316" stroke="#c2410c" stroke-width="2"/>
+        <circle id="svgDisk4" cx="500" cy="393" r="18" fill="#a855f7" stroke="#7c3aed" stroke-width="2"/>
+
+        <!-- Robot base: shoulder at (569,265) -->
+        <rect x="543" y="266" width="52" height="12" rx="3" fill="#4b5563"/>
+        <rect x="537" y="278" width="64" height="14" rx="3" fill="#374151"/>
+        <text x="569" y="308" text-anchor="middle" font-size="8" fill="#9ca3af" font-family="monospace">FANUC R-50iA</text>
+
+        <!-- X Cross Pile (4 pieces robot picks from) — below base, rotated 45° so they look like X -->
+        <text x="569" y="328" text-anchor="middle" font-size="8" font-weight="700" fill="#718096" letter-spacing="1">CROSS PILE</text>
+        <!-- Cross piece 0 -->
+        <g id="crossPile0" transform="translate(529,370) rotate(45)">
+          <rect x="-3" y="-14" width="6" height="28" rx="2" fill="#1e40af"/>
+          <rect x="-14" y="-3" width="28" height="6" rx="2" fill="#1e40af"/>
+        </g>
+        <!-- Cross piece 1 -->
+        <g id="crossPile1" transform="translate(556,370) rotate(45)">
+          <rect x="-3" y="-14" width="6" height="28" rx="2" fill="#1e40af"/>
+          <rect x="-14" y="-3" width="28" height="6" rx="2" fill="#1e40af"/>
+        </g>
+        <!-- Cross piece 2 -->
+        <g id="crossPile2" transform="translate(583,370) rotate(45)">
+          <rect x="-3" y="-14" width="6" height="28" rx="2" fill="#1e40af"/>
+          <rect x="-14" y="-3" width="28" height="6" rx="2" fill="#1e40af"/>
+        </g>
+        <!-- Cross piece 3 -->
+        <g id="crossPile3" transform="translate(610,370) rotate(45)">
+          <rect x="-3" y="-14" width="6" height="28" rx="2" fill="#1e40af"/>
+          <rect x="-14" y="-3" width="28" height="6" rx="2" fill="#1e40af"/>
+        </g>
+
+        <!-- ARM: rects drawn BEFORE joints so joints render on top -->
+        <rect id="armUpperRect" x="0" y="0" width="10" height="1" rx="3" fill="#6b7280" stroke="#4b5563" stroke-width="1.5"/>
+        <rect id="armForeRect"  x="0" y="0" width="7"  height="1" rx="3" fill="#9ca3af" stroke="#6b7280" stroke-width="1.5"/>
+        <!-- Gripper: shaft stub + two parallel finger lines extending from gripper tip -->
+        <line id="gripShaft" x1="0" y1="0" x2="0" y2="0" stroke="#374151" stroke-width="2.5" stroke-linecap="round"/>
+        <line id="gripL"     x1="0" y1="0" x2="0" y2="0" stroke="#1f2937" stroke-width="4"   stroke-linecap="round"/>
+        <line id="gripR"     x1="0" y1="0" x2="0" y2="0" stroke="#1f2937" stroke-width="4"   stroke-linecap="round"/>
+        <!-- Disk held on gripper tip -->
+        <circle id="heldDiskSvg" cx="0" cy="0" r="18" fill="#3b82f6" stroke="rgba(0,0,0,.12)" stroke-width="1.5" opacity="0"/>
+        <!-- X cross held on robot gripper tip (shown during robot carry phase) -->
+        <!-- heldCrossSvg: outer g moves to gripper tip (translate only); inner g bakes in 45° rotation so it always renders as X -->
+        <g id="heldCrossSvg" opacity="0" transform="translate(0,0)">
+          <g transform="rotate(45)">
+            <rect x="-4" y="-16" width="8" height="32" rx="2" fill="#1e40af"/>
+            <rect x="-16" y="-4" width="32" height="8" rx="2" fill="#1e40af"/>
+          </g>
+        </g>
+        <!-- JOINTS on top -->
+        <circle id="jointShoulder" cx="569" cy="265" r="12" fill="#f5c518" stroke="#111" stroke-width="2.5"/>
+        <circle id="jointElbow"    cx="0"   cy="0"  r="9"  fill="#f5c518" stroke="#111" stroke-width="2"/>
+        <circle id="jointWrist"    cx="0"   cy="0"  r="7"  fill="#f5c518" stroke="#111" stroke-width="1.5"/>
+
+        <!-- Status display -->
+        <text id="statusTurnText" x="700" y="160" text-anchor="middle" font-size="13" font-weight="700" fill="#2563eb">👤 Human turn</text>
+        <text id="statusWinText"  x="700" y="185" text-anchor="middle" font-size="11" font-weight="600" fill="#4a5568">⚪ In progress</text>
+      </svg>
+
+      <!-- Reset game button below canvas -->
+      <div style="display:flex;justify-content:flex-end;">
+        <button class="btn-yellow" onclick="resetGame()" style="font-size:.85rem;">&#8635; Reset game</button>
+      </div>
+
+    </div><!-- end game-card -->
+
+    <style>
+      .btn-yellow{background:#f5c518;color:#111;border:none;border-radius:10px;padding:.65rem 1.4rem;font-size:.95rem;font-weight:700;cursor:pointer;}
+      .btn-yellow:hover{background:#e0b010;}
+      .btn-yellow.active{background:#22c55e;color:#fff;}
+      .svg-cell:hover{fill:rgba(239,246,255,.6);}
+    </style>
+
+    <script>
+    (function(){
+      // ═══ ONLINE/OFFLINE MODE TOGGLE ═══
+      var _offlineMode=false;
+      function handleModeToggle(isOffline){
+        _offlineMode=isOffline;
+        var badge=document.getElementById('modeBadge');
+        var label=document.getElementById('aiModeLabel');
+        var slider=document.getElementById('modeSlider');
+        var knob=document.getElementById('modeKnob');
+        var micBtn=document.getElementById('micBtn2');
+        if(isOffline){
+          badge.textContent='🔴 Offline Mode'; badge.style.color='#dc2626';
+          label.textContent='🤖 Local AI (Ollama)'; label.style.color='#dc2626';
+          slider.style.background='#dc2626'; knob.style.transform='translateX(20px)';
+          if(micBtn){micBtn.disabled=true;micBtn.style.opacity='0.4';micBtn.title='Mic unavailable in offline mode';}
+          rmiLog('MODE: Offline — Local Ollama AI. Mic + Polly disabled.');
+        }else{
+          badge.textContent='🌐 Cloud Mode'; badge.style.color='#374151';
+          label.textContent='☁️ Bedrock AI'; label.style.color='#059669';
+          slider.style.background='#cbd5e0'; knob.style.transform='translateX(0)';
+          if(micBtn){micBtn.disabled=false;micBtn.style.opacity='1';micBtn.title='';}
+          rmiLog('MODE: Online — Bedrock + Transcribe + Polly.');
+        }
+      }
+
+      // ═══ ROLE-BASED UI ═══
+      fetch('/me',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(u){
+        window._userRole=u.role||'basic';
+        window._username=u.username||'';
+        // Hide voice/AI features for basic users
+        if(window._userRole==='basic'){
+          var mic=document.getElementById('micBtn2');if(mic)mic.style.display='none';
+          // Hide Option 2 (text command) section
+          var labels=document.querySelectorAll('span');
+          labels.forEach(function(s){if(s.textContent.trim()==='Option 2')s.parentElement.parentElement.style.display='none';});
+          // Hide AI Response section
+          var aiResp=document.getElementById('aiResponse');if(aiResp)aiResp.parentElement.style.display='none';
+        }
+        // Show admin link + username for admin users
+        if(window._userRole==='admin'){
+          var adminLink=document.createElement('a');
+          adminLink.href='/admin';adminLink.textContent='⚙️ Admin';
+          adminLink.style.cssText='position:fixed;top:10px;right:10px;background:#f5c518;color:#111;padding:6px 14px;border-radius:8px;font-weight:700;font-size:.8rem;text-decoration:none;z-index:9999;';
+          document.body.appendChild(adminLink);
+        }
+        // Show username + logout in top-left
+        var userBadge=document.createElement('div');
+        userBadge.style.cssText='position:fixed;top:10px;left:10px;display:flex;align-items:center;gap:8px;background:#1a237e;color:#fff;padding:6px 14px;border-radius:8px;font-weight:700;font-size:.8rem;z-index:9999;';
+        var nameSpan=document.createElement('span');
+        nameSpan.textContent=window._username+' ('+window._userRole+')';
+        var logoutBtn=document.createElement('button');
+        logoutBtn.textContent='Log out';
+        logoutBtn.style.cssText='background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:6px;padding:3px 10px;font-size:.75rem;font-weight:700;cursor:pointer;';
+        logoutBtn.onclick=function(){
+          fetch('/logout',{method:'POST'}).then(function(){window.location.href='/login';});
+        };
+        userBadge.appendChild(nameSpan);
+        userBadge.appendChild(logoutBtn);
+        document.body.appendChild(userBadge);
+      }).catch(function(){/* /me unreachable — leave default UI as-is */});
+
+      // ═══ GEOMETRY ═══
+      var SX=569, SY=265, L1=210, L2=125;
+      var HOME_SH=-15, HOME_EL=145;
+      // Cell centres: telephone keypad col 300,380,460 / row 118,198,278
+      var CELL_CX=[300,380,460, 300,380,460, 300,380,460];
+      var CELL_CY=[118,118,118, 198,198,198, 278,278,278];
+      // Disk supply centres
+      var DISK_CX=[260,320,380,440,500], DISK_CY=393;
+      var DISK_COLORS=['#ef4444','#3b82f6','#22c55e','#f97316','#a855f7'];
+      var DISK_NAMES=['red','blue','green','orange','purple'];
+      // Mapping sq label to cell index
+      var SQUARE_TO_IDX={7:0,8:1,9:2,4:3,5:4,6:5,1:6,2:7,3:8};
+      var IDX_TO_SQUARE={0:7,1:8,2:9,3:4,4:5,5:6,6:1,7:2,8:3};
+
+      // ═══ GAME STATE ═══
+      var boardState=Array(9).fill(null);
+      var gameOver=false, animating=false;
+      var diskUsed=[false,false,false,false,false];
+      var crossPileCount=4;
+      var _llmMove=false; // set true when sendCommand triggers arm — suppresses generic placement readback
+      var curSh=HOME_SH, curEl=HOME_EL;
+      var WINS=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+
+      // ═══ IK SOLVER ═══
+      function solveIK(tx,ty){
+        var dx=tx-SX,dy=ty-SY,d=Math.hypot(dx,dy);
+        var mx=L1+L2,mn=Math.abs(L1-L2)+1;
+        d=Math.min(d,mx);d=Math.max(d,mn);
+        var aT=Math.atan2(dx,-dy);
+        var cE=(L1*L1+L2*L2-d*d)/(2*L1*L2);cE=Math.max(-1,Math.min(1,cE));
+        var el=Math.PI-Math.acos(cE);
+        var cO=(L1*L1+d*d-L2*L2)/(2*L1*d);cO=Math.max(-1,Math.min(1,cO));
+        return{sh:(aT-Math.acos(cO))*180/Math.PI,el:el*180/Math.PI};
+      }
+
+      // ═══ MOVE ARM (each rect rotated around its own midpoint) ═══
+      function mv(sh,el){
+        curSh=sh;curEl=el;
+        var sR=sh*Math.PI/180,ux=Math.sin(sR),uy=-Math.cos(sR);
+        var ex=SX+L1*ux,ey=SY+L1*uy;
+        var fR=(sh+el)*Math.PI/180,fx=Math.sin(fR),fy=-Math.cos(fR);
+        var wx=ex+L2*fx,wy=ey+L2*fy;
+        var gpx=wx+fx*10,gpy=wy+fy*10;
+        var hpx=gpx+fx*18,hpy=gpy+fy*18; // disk at gripper tip
+        // Upper arm rect: centred on midpoint shoulder→elbow
+        var umx=(SX+ex)/2,umy=(SY+ey)/2;
+        var ur=document.getElementById('armUpperRect');
+        ur.setAttribute('x',umx-5);ur.setAttribute('y',umy-L1/2);
+        ur.setAttribute('width',10);ur.setAttribute('height',L1);
+        ur.setAttribute('transform','rotate('+sh+','+umx+','+umy+')');
+        // Forearm rect: centred on midpoint elbow→wrist
+        var fmx=(ex+wx)/2,fmy=(ey+wy)/2;
+        var fr=document.getElementById('armForeRect');
+        fr.setAttribute('x',fmx-3.5);fr.setAttribute('y',fmy-L2/2);
+        fr.setAttribute('width',7);fr.setAttribute('height',L2);
+        fr.setAttribute('transform','rotate('+(sh+el)+','+fmx+','+fmy+')');
+        // Joints
+        document.getElementById('jointElbow').setAttribute('cx',ex);document.getElementById('jointElbow').setAttribute('cy',ey);
+        document.getElementById('jointWrist').setAttribute('cx',wx);document.getElementById('jointWrist').setAttribute('cy',wy);
+        // Gripper: two short parallel fingers anchored at the wrist joint
+        // px,py = perpendicular to arm; fx,fy = along arm direction
+        var px=-fy,py=fx;
+        var jawLen=12, jawOffset=6; // shorter fingers, anchored at wrist
+        // No shaft line — fingers start directly at wrist joint (wx, wy)
+        var gs=document.getElementById('gripShaft');
+        gs.setAttribute('x1',wx);gs.setAttribute('y1',wy);gs.setAttribute('x2',wx);gs.setAttribute('y2',wy); // hidden (zero length)
+        // Upper finger: starts at wrist + perpendicular offset, extends along arm
+        var gL=document.getElementById('gripL');
+        gL.setAttribute('x1',wx+px*jawOffset);gL.setAttribute('y1',wy+py*jawOffset);
+        gL.setAttribute('x2',wx+px*jawOffset+fx*jawLen);gL.setAttribute('y2',wy+py*jawOffset+fy*jawLen);
+        // Lower finger: starts at wrist - perpendicular offset, same length
+        var gR=document.getElementById('gripR');
+        gR.setAttribute('x1',wx-px*jawOffset);gR.setAttribute('y1',wy-py*jawOffset);
+        gR.setAttribute('x2',wx-px*jawOffset+fx*jawLen);gR.setAttribute('y2',wy-py*jawOffset+fy*jawLen);
+        // Held disk follows gripper tip
+        var hd=document.getElementById('heldDiskSvg');hd.setAttribute('cx',hpx);hd.setAttribute('cy',hpy);
+        // Held cross follows gripper tip — translate only; rotation is baked into inner <g>
+        var hc=document.getElementById('heldCrossSvg');
+        hc.setAttribute('transform','translate('+hpx+','+hpy+')');
+      }
+
+      // ═══ ANIMATION ═══
+      var PHASE_MS=1600;
+      function animTo(target,ms,cb){
+        var N=60,dt=ms/N,i=0,sh0=curSh,el0=curEl;
+        var dsh=(target.sh-sh0)/N,del=(target.el-el0)/N;
+        var tid=setInterval(function(){i++;mv(sh0+dsh*i,el0+del*i);if(i>=N){clearInterval(tid);if(cb)cb();}},dt);
+      }
+      function goHome(cb){animTo({sh:HOME_SH,el:HOME_EL},PHASE_MS*.7,cb);}
+
+      // ═══ HELPERS ═══
+      function rmiLog(msg){var e=document.getElementById('rmiLog');if(!e)return;var ts=new Date().toTimeString().substr(0,8);e.textContent+='['+ts+'] '+msg+'\n';e.scrollTop=e.scrollHeight;}
+      function setTurn(t){var e=document.getElementById('statusTurnText');if(e)e.textContent=t;}
+      function setWin(t){var e=document.getElementById('statusWinText');if(e)e.textContent=t;}
+
+      // ═══ DISK PICK + PLACE (human move) ═══
+      function humanPickAndPlace(diskIdx,cellIdx,done){
+        animating=true;
+        var ik1=solveIK(DISK_CX[diskIdx],DISK_CY);
+        var ik2=solveIK(CELL_CX[cellIdx],CELL_CY[cellIdx]);
+        rmiLog('ARM Phase1: reach disk_'+diskIdx+' sh='+ik1.sh.toFixed(0)+' el='+ik1.el.toFixed(0));
+        animTo(ik1,PHASE_MS,function(){
+          // Pick: hide supply disk, show held disk in disk color
+          document.getElementById('svgDisk'+diskIdx).setAttribute('opacity','0');
+          var hd=document.getElementById('heldDiskSvg');
+          hd.setAttribute('fill',DISK_COLORS[diskIdx]);
+          hd.setAttribute('opacity','1');
+          rmiLog('ARM: gripped disk_'+diskIdx);
+          // Carry to cell
+          rmiLog('ARM Phase2: carry to cell_'+cellIdx+' sh='+ik2.sh.toFixed(0)+' el='+ik2.el.toFixed(0));
+          animTo(ik2,PHASE_MS,function(){
+            // Place: disk centred exactly at cell centre
+            hd.setAttribute('opacity','0');
+            var c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+            c.setAttribute('cx',CELL_CX[cellIdx]);c.setAttribute('cy',CELL_CY[cellIdx]);
+            c.setAttribute('r','18');c.setAttribute('fill',DISK_COLORS[diskIdx]);
+            c.setAttribute('stroke','rgba(0,0,0,.1)');c.setAttribute('stroke-width','1.5');
+            document.getElementById('svgPlacedPieces').appendChild(c);
+            rmiLog('PLACED disk_'+diskIdx+' at sq'+IDX_TO_SQUARE[cellIdx]);
+            if(!_llmMove)speakPolly(DISK_NAMES[diskIdx]+' disk on square '+IDX_TO_SQUARE[cellIdx]+'.');
+            _llmMove=false;
+            goHome(function(){rmiLog('ARM: home');animating=false;if(done)done();});
+          });
+        });
+      }
+
+      // ═══ ROBOT CROSS PLACEMENT ═══
+      // Cross pile positions match SVG pile elements (crossPile0/1/2)
+      var CROSS_PILE_CX=[529,556,583,610], CROSS_PILE_CY=370;
+
+      function robotPickAndPlace(cellIdx,done){
+        animating=true;
+        // Pick from the next available pile piece
+        var pileIdx=4-crossPileCount; // 0,1,2,3 as pile depletes
+        var pickX=CROSS_PILE_CX[pileIdx]||569;
+        var pickY=CROSS_PILE_CY;
+        var ik1=solveIK(pickX,pickY);
+        var ik2=solveIK(CELL_CX[cellIdx],CELL_CY[cellIdx]);
+        rmiLog('ROBOT ARM Phase1: reach crossPile'+pileIdx+' sh='+ik1.sh.toFixed(0));
+        animTo(ik1,PHASE_MS,function(){
+          // Hide the pile piece being picked
+          var pileEl=document.getElementById('crossPile'+pileIdx);
+          if(pileEl)pileEl.setAttribute('opacity','0');
+          crossPileCount--;
+          // Show X on gripper during carry
+          document.getElementById('heldCrossSvg').setAttribute('opacity','1');
+          rmiLog('ROBOT ARM: gripped cross from pile '+pileIdx);
+          rmiLog('ROBOT ARM Phase2: carry to sq'+IDX_TO_SQUARE[cellIdx]);
+          animTo(ik2,PHASE_MS,function(){
+            // Hide held cross before placing
+            document.getElementById('heldCrossSvg').setAttribute('opacity','0');
+            // Place cross
+            var g=document.createElementNS('http://www.w3.org/2000/svg','g');
+            g.setAttribute('transform','translate('+CELL_CX[cellIdx]+','+CELL_CY[cellIdx]+') rotate(45)');
+            [[-3,-16,6,32],[-16,-3,32,6]].forEach(function(d){
+              var r=document.createElementNS('http://www.w3.org/2000/svg','rect');
+              r.setAttribute('x',d[0]);r.setAttribute('y',d[1]);r.setAttribute('width',d[2]);r.setAttribute('height',d[3]);
+              r.setAttribute('rx','2');r.setAttribute('fill','#1e40af');g.appendChild(r);
+            });
+            document.getElementById('svgPlacedPieces').appendChild(g);
+            rmiLog('PLACED cross at sq'+IDX_TO_SQUARE[cellIdx]);
+            speakPolly('Robot places on square '+IDX_TO_SQUARE[cellIdx]+'.');
+            goHome(function(){rmiLog('ROBOT ARM: home');animating=false;if(done)done();});
+          });
+        });
+      }
+
+      // ═══ GAME LOGIC ═══
+      function checkWin(mark){return WINS.some(function(l){return l.every(function(i){return boardState[i]===mark;});});}
+      function checkDraw(){return boardState.every(function(v){return v!==null;});}
+      function minimax(b,isMax){
+        if(WINS.some(function(l){return l.every(function(i){return b[i]==='X'});}))return 10;
+        if(WINS.some(function(l){return l.every(function(i){return b[i]&&b[i]!=='X'});}))return -10;
+        if(b.every(function(v){return v!==null;}))return 0;
+        var scores=[];for(var i=0;i<9;i++){if(!b[i]){b[i]=isMax?'X':'_H';scores.push(minimax(b,!isMax));b[i]=null;}}
+        return isMax?Math.max.apply(null,scores):Math.min.apply(null,scores);
+      }
+      function bestRobotMove(){var bv=-Infinity,bm=-1,s=boardState.slice();for(var i=0;i<9;i++){if(!s[i]){s[i]='X';var sc=minimax(s,false);s[i]=null;if(sc>bv){bv=sc;bm=i;}}}return bm;}
+      function getNextDisk(){for(var i=0;i<5;i++){if(!diskUsed[i])return i;}return -1;}
+
+      function endGame(msg){gameOver=true;setWin(msg);rmiLog('GAME OVER: '+msg);speakPolly(msg.replace(/[^\w\s]/g,''));}
+
+      function humanMove(cellIdx){
+        if(gameOver||boardState[cellIdx]||animating)return;
+        var di=getNextDisk();if(di<0){rmiLog('No disks available');return;}
+        diskUsed[di]=true;boardState[cellIdx]='H'+di;
+        setTurn('🤖 Robot thinking...');
+        humanPickAndPlace(di,cellIdx,function(){
+          if(checkWin('H'+di)||WINS.some(function(l){return l.every(function(i){return boardState[i]&&boardState[i]!=='X'});})){endGame('👤 Human wins!');return;}
+          if(checkDraw()){endGame('🤝 Draw!');return;}
+          var m=bestRobotMove();if(m<0)return;
+          boardState[m]='X';
+          robotPickAndPlace(m,function(){
+            if(checkWin('X')){endGame('🤖 Robot wins!');return;}
+            if(checkDraw()){endGame('🤝 Draw!');return;}
+            setTurn('👤 Human turn');
+          });
+        });
+      }
+
+      // ═══ sendCommand (from text/mic input via /move endpoint) ═══
+      window.sendCommand=function(){
+        var input=document.getElementById('commandInput');
+        var cmd=input.value.trim();if(!cmd)return;
+        input.value='';
+        // Detect lang but do NOT update Option 1 transcript (typed input only)
+        fetch('/detect-lang',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({text:normalizeGameInput(cmd)})})
+        .then(function(r){return r.json();})
+        .then(function(d){_lastLang=d.lang||'en';execMove(normalizeGameInput(cmd),_lastLang,false);})
+        .catch(function(){execMove(normalizeGameInput(cmd),'en',false);});
+      };
+
+      // ═══ toggleMic ═══
+      // ═══ AMAZON TRANSCRIBE STREAMING MIC PIPELINE ═══
+      // Uses WebSocket /ws/transcribe → real-time Transcribe Streaming
+      // Browser sends raw PCM Int16 binary → server wraps in event-stream → Transcribe
+      var _wsConn=null, _wsActive=false, _wsRec=null, _wsDone=false;
+      var _lastLang='en';
+
+      // Language → Polly voice mapping
+      var LANG_VOICE={
+        'en':'Joanna','en-US':'Joanna','en-GB':'Amy','en-AU':'Olivia',
+        'fr':'Lea','fr-FR':'Lea','fr-CA':'Gabrielle',
+        'de':'Vicki','de-DE':'Vicki',
+        'es':'Lucia','es-ES':'Lucia','es-US':'Lupe',
+        'it':'Bianca','it-IT':'Bianca',
+        'pt':'Camila','pt-BR':'Camila',
+        'ja':'Takumi','ko':'Seoyeon','zh':'Zhiyu'
+      };
+      function getLangVoice(lang){
+        if(!lang)return'Joanna';
+        return LANG_VOICE[lang]||LANG_VOICE[lang.split('-')[0]]||'Joanna';
+      }
+
+      // ── Normalizer: fix STT mishears before sending to /move ──
+      function normalizeGameInput(text){
+        return text
+          .replace(/\bblue\s*tooth\b/gi,'blue')
+          .replace(/\bblue\s*to\b/gi,'blue to')
+          .replace(/\bblu\b/gi,'blue')
+          .replace(/\bgr[ie]+n\b/gi,'green')
+          .replace(/\bpu?rp?l[e]?\b/gi,'purple')
+          .replace(/\borang[e]?\b/gi,'orange')
+          .replace(/\bre+d\b/gi,'red')
+          .replace(/\btoo\b|\btwo\b/gi,'2')
+          .replace(/\bfor\b|\bfour\b/gi,'4')
+          .replace(/\bwon\b|\bone\b/gi,'1')
+          .replace(/\b(?:six|sicks?)\b/gi,'6')
+          .replace(/\b(?:ate|eight)\b/gi,'8')
+          .replace(/\bnine\b/gi,'9')
+          .replace(/\bfive\b/gi,'5')
+          .replace(/\bseven\b/gi,'7')
+          .replace(/\bthree\b/gi,'3')
+          .replace(/\b(?:place|put|move|go|send|the|a|an|on|in|at|square|cell|position|spot|number|disk|piece)\b/gi,'')
+          .replace(/\s{2,}/g,' ').trim();
+      }
+
+      function execMove(text,lang){
+        var tEl=document.getElementById('transcript');
+        if(tEl){tEl.textContent=text;tEl.style.fontStyle='normal';tEl.style.color='#1a202c';}
+        document.getElementById('aiResponse').textContent='Processing...';
+        rmiLog('USER CMD ('+lang+'): '+text);
+        var diskColorMap={};var disksAvailable=[];
+        DISK_COLORS.forEach(function(color,i){diskColorMap['disk_'+i]=color;if(!diskUsed[i])disksAvailable.push('disk_'+i);});
+        var diskColorNames={};DISK_NAMES.forEach(function(name,i){diskColorNames['disk_'+i]=name;});
+        var payload={user_input:text,board_state:boardState.map(function(v){if(!v)return null;if(v==='X')return'X';return'disk_'+v.replace('H','');}),disks_available:disksAvailable,disk_colors:diskColorMap,disk_color_names:diskColorNames,current_turn:gameOver?'none':'human',game_over:gameOver,language:lang};
+        payload.offline_mode=_offlineMode;fetch('/move',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(payload)})
+        .then(function(r){return r.json();}).then(function(data){
+          var respLang=data.language||lang;
+          document.getElementById('aiResponse').textContent=data.reason||'No response';
+          if(!data.valid){rmiLog('MOVE REJECTED: '+data.reason);speakPolly(data.reason,respLang);return;}
+          var cellIdx=data.board_index;
+          var diskIdStr=data.disk_id||'';var diskNum=parseInt(diskIdStr.replace('disk_',''));
+          // Cross-check disk_id against color_mentioned
+          var colorMentioned=(data.color_mentioned||'').toLowerCase().trim();
+          if(colorMentioned){
+            var colorIdx=DISK_NAMES.indexOf(colorMentioned);
+            if(colorIdx>=0&&!diskUsed[colorIdx]&&colorIdx!==diskNum){
+              rmiLog('DISK FIX: disk_id='+diskNum+' but color_mentioned='+colorMentioned+' → using disk '+colorIdx);
+              diskNum=colorIdx;
+            }
+          }
+          if(isNaN(diskNum)){for(var k=0;k<5;k++){if(!diskUsed[k]){diskNum=k;break;}}}
+          if(diskNum===undefined||diskUsed[diskNum]||boardState[cellIdx]!==null){rmiLog('ERROR: invalid move');return;}
+          rmiLog('LLM: valid=true sq='+data.square+' disk='+diskNum+' reason='+data.reason.substr(0,60));
+          speakPolly(data.reason,respLang);
+          if(diskUsed[diskNum]){rmiLog('ERROR: disk_'+diskNum+' already used');return;}
+          if(boardState[cellIdx]!==null){rmiLog('ERROR: cell '+cellIdx+' already occupied');return;}
+          diskUsed[diskNum]=true; boardState[cellIdx]='H'+diskNum;
+          setTurn('🤖 Robot thinking...');
+          _llmMove=true;humanPickAndPlace(diskNum,cellIdx,function(){
+            if(checkWin('H'+diskNum)||WINS.some(function(l){return l.every(function(i){return boardState[i]&&boardState[i]!=='X'});})){endGame('👤 Human wins!');return;}
+            if(checkDraw()){endGame('🤝 Draw!');return;}
+            var m=bestRobotMove();if(m<0){endGame('🤝 Draw!');return;}
+            boardState[m]='X';
+            robotPickAndPlace(m,function(){
+              if(checkWin('X')){endGame('🤖 Robot wins!');return;}
+              if(checkDraw()){endGame('🤝 Draw!');return;}
+              setTurn('👤 Human turn');
+            });
+          });
+        }).catch(function(err){document.getElementById('aiResponse').textContent='Error: '+err.message;});
+      }
+
+      window.toggleMic=function(){
+        var btn2=document.getElementById('micBtn2');
+        if(_wsActive){
+          // Stop streaming
+          _wsActive=false;
+          if(_wsConn&&_wsConn.readyState===WebSocket.OPEN){
+            _wsConn.send(JSON.stringify({type:'end'}));
+          }
+          if(_wsRec){
+            _wsRec.stream.getTracks().forEach(function(t){t.stop();});
+            _wsRec.ctx.close();
+            _wsRec=null;
+          }
+          if(btn2){btn2.innerHTML='&#127908; Mic';btn2.style.background='#f5c518';btn2.style.color='#111';}
+          return;
+        }
+        // Start streaming
+        var tEl=document.getElementById('transcript');
+        if(tEl){tEl.textContent='Connecting...';tEl.style.fontStyle='italic';tEl.style.color='#a0aec0';}
+        var wsUrl='ws://'+window.location.host+'/ws/transcribe';
+        _wsConn=new WebSocket(wsUrl);
+        _wsConn.binaryType='arraybuffer';
+        _wsDone=false;
+        var finalParts=[];
+
+        _wsConn.onopen=function(){
+          rmiLog('MIC WS connected');
+          _wsActive=true;
+          if(btn2){btn2.innerHTML='&#128308; Listening…';btn2.style.background='#ef4444';btn2.style.color='#fff';}
+          if(tEl){tEl.textContent='Listening…';tEl.style.fontStyle='italic';tEl.style.color='#a0aec0';}
+          // Start mic + AudioContext for PCM streaming
+          navigator.mediaDevices.getUserMedia({audio:{channelCount:1}}).then(function(stream){
+            var ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:16000});
+            var actualRate=ctx.sampleRate;
+            _wsConn.send(JSON.stringify({type:'init',sampleRate:actualRate}));
+            var src=ctx.createMediaStreamSource(stream);
+            var proc=ctx.createScriptProcessor(4096,1,1);
+            proc.onaudioprocess=function(e){
+              if(!_wsActive)return;
+              var float32=e.inputBuffer.getChannelData(0);
+              var int16=new Int16Array(float32.length);
+              for(var i=0;i<float32.length;i++){
+                int16[i]=Math.max(-32768,Math.min(32767,float32[i]*32768));
+              }
+              if(_wsConn&&_wsConn.readyState===WebSocket.OPEN){
+                _wsConn.send(int16.buffer);
+              }
+            };
+            src.connect(proc);
+            proc.connect(ctx.destination);
+            _wsRec={stream:stream,ctx:ctx,src:src,proc:proc};
+            rmiLog('PCM streaming started ('+actualRate+'Hz)');
+          }).catch(function(e){rmiLog('MIC ERROR: '+e.message);});
+        };
+
+        _wsConn.onmessage=function(evt){
+          try{
+            var msg=JSON.parse(evt.data);
+            if(msg.type==='partial'){
+              if(tEl){tEl.textContent=finalParts.join(' ')+(finalParts.length?' ':'')+msg.transcript;tEl.style.fontStyle='normal';tEl.style.color='#1a202c';}
+            } else if(msg.type==='final'){
+              finalParts.push(msg.transcript);
+              if(tEl){tEl.textContent=finalParts.join(' ');tEl.style.fontStyle='normal';tEl.style.color='#1a202c';}
+              // Only accept language from Transcribe if it's confident (starts with 'en' for now)
+              var detectedLang=(msg.language_code||'en').split('-')[0];
+              if(detectedLang&&detectedLang.length===2)_lastLang=detectedLang;
+              // Safety: if Polly voice doesn't exist for detected lang, fall back to English
+              if(!getLangVoice(_lastLang)||getLangVoice(_lastLang)==='Joanna'&&_lastLang!=='en')_lastLang='en';
+            } else if(msg.type==='error'){
+              rmiLog('TRANSCRIBE ERROR: '+msg.error);
+            } else if(msg.type==='done'){
+              _wsDone=true;
+              rmiLog('TRANSCRIBE done');
+              // Process the full transcript through the game
+              var fullText=finalParts.join(' ').trim();
+              if(fullText){
+                var normalized=normalizeGameInput(fullText);
+                if(normalized!==fullText)rmiLog('NORMALIZED: "'+fullText+'" → "'+normalized+'"');
+                execMove(normalized||fullText,_lastLang);
+              }
+            }
+          }catch(e){}
+        };
+
+        _wsConn.onerror=function(){if(!_wsDone)rmiLog('MIC WS error');};
+        _wsConn.onclose=function(){
+          _wsActive=false;
+          if(btn2){btn2.innerHTML='&#127908; Mic';btn2.style.background='#f5c518';btn2.style.color='#111';}
+          if(_wsRec){_wsRec.stream.getTracks().forEach(function(t){t.stop();});_wsRec.ctx.close();_wsRec=null;}
+          // If WS closed before 'done' was received but we have transcripts, process them now
+          if(!_wsDone&&finalParts.length>0){
+            _wsDone=true;
+            var fullText=finalParts.join(' ').trim();
+            rmiLog('MIC closed (processing on close): "'+fullText+'"');
+            var normalized=normalizeGameInput(fullText);
+            execMove(normalized||fullText,_lastLang);
+          }
+        };
+      };
+
+      // ── sendCommand (typed Option 2 input) ──
+      window.sendCommand=function(){
+        var input=document.getElementById('commandInput');
+        var cmd=input.value.trim();if(!cmd)return;
+        input.value='';
+        var normalized=normalizeGameInput(cmd);
+        fetch('/detect-lang',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({text:normalized||cmd})})
+        .then(function(r){return r.json();})
+        .then(function(d){_lastLang=d.lang||'en';execMove(normalized||cmd,_lastLang);})
+        .catch(function(){execMove(normalized||cmd,'en');});
+      };
+
+      // ═══ resetGame ═══
+      window.resetGame=function(){
+        boardState=Array(9).fill(null);gameOver=false;animating=false;
+        diskUsed=[false,false,false,false,false];crossPileCount=4;
+        _llmMove=false;
+        document.getElementById('svgPlacedPieces').innerHTML='';
+        for(var i=0;i<5;i++){document.getElementById('svgDisk'+i).setAttribute('opacity','1');}
+        document.getElementById('heldDiskSvg').setAttribute('opacity','0');
+        // Restore cross pile pieces
+        for(var p=0;p<4;p++){var pe=document.getElementById('crossPile'+p);if(pe)pe.setAttribute('opacity','1');}
+        setTurn('👤 Human turn');setWin('⚪ In progress');
+        document.getElementById('rmiLog').textContent='# RMI communication log\n# Ready\n\n';
+        rmiLog('RESET board');
+        mv(HOME_SH,HOME_EL);
+      };
+
+      // ═══ Cell click handlers ═══
+      document.querySelectorAll('.svg-cell').forEach(function(c){
+        c.addEventListener('click',function(){humanMove(parseInt(c.getAttribute('data-cell')));});
+      });
+
+      // ═══ Drag-from-disk-to-cell ═══
+      var dragDiskIdx=null;
+      var dragGhost=null;
+
+      function createGhost(diskIdx,x,y){
+        var ghost=document.createElement('div');
+        ghost.id='diskDragGhost';
+        var color=DISK_COLORS[diskIdx]||'#aaa';
+        ghost.style.cssText='position:fixed;width:38px;height:38px;border-radius:50%;'
+          +'background:'+color+';opacity:0.85;pointer-events:none;z-index:9999;'
+          +'transform:translate(-50%,-50%);box-shadow:0 4px 16px rgba(0,0,0,0.25);'
+          +'border:3px solid rgba(255,255,255,0.7);transition:none;';
+        ghost.style.left=x+'px';ghost.style.top=y+'px';
+        document.body.appendChild(ghost);
+        return ghost;
+      }
+
+      document.querySelectorAll('[id^="svgDisk"]').forEach(function(disk){
+        disk.setAttribute('cursor','grab');
+        disk.addEventListener('mousedown',function(e){
+          var idx=parseInt(disk.id.replace('svgDisk',''));
+          if(diskUsed[idx]||gameOver||animating)return;
+          dragDiskIdx=idx;
+          dragGhost=createGhost(idx,e.clientX,e.clientY);
+          e.preventDefault();
+        });
+      });
+
+      document.addEventListener('mousemove',function(e){
+        if(dragGhost){
+          dragGhost.style.left=e.clientX+'px';
+          dragGhost.style.top=e.clientY+'px';
+        }
+      });
+
+      document.addEventListener('mouseup',function(e){
+        if(dragDiskIdx===null)return;
+        var di=dragDiskIdx;
+        if(dragGhost){dragGhost.remove();dragGhost=null;}
+        dragDiskIdx=null;
+        var svg=document.getElementById('gameCanvas');
+        var pt=svg.createSVGPoint();
+        pt.x=e.clientX;pt.y=e.clientY;
+        var svgP=pt.matrixTransform(svg.getScreenCTM().inverse());
+        var cells=document.querySelectorAll('.svg-cell');
+        cells.forEach(function(c){
+          var x=parseFloat(c.getAttribute('x')),y=parseFloat(c.getAttribute('y'));
+          var w=parseFloat(c.getAttribute('width')),h=parseFloat(c.getAttribute('height'));
+          if(svgP.x>=x&&svgP.x<=x+w&&svgP.y>=y&&svgP.y<=y+h){
+            var cellIdx=parseInt(c.getAttribute('data-cell'));
+            if(!gameOver&&!boardState[cellIdx]&&!animating&&!diskUsed[di]){
+              diskUsed[di]=true; boardState[cellIdx]='H'+di;
+              document.getElementById('svgDisk'+di).setAttribute('opacity','0');
+              var placed=document.createElementNS('http://www.w3.org/2000/svg','circle');
+              placed.setAttribute('cx',CELL_CX[cellIdx]);placed.setAttribute('cy',CELL_CY[cellIdx]);
+              placed.setAttribute('r','18');placed.setAttribute('fill',DISK_COLORS[di]);
+              placed.setAttribute('stroke','rgba(0,0,0,.1)');placed.setAttribute('stroke-width','1.5');
+              document.getElementById('svgPlacedPieces').appendChild(placed);
+              rmiLog('DRAG PLACED disk_'+di+' at sq'+(cellIdx+1));
+              speakPolly(DISK_NAMES[di]+' disk on square '+(cellIdx+1)+'.');
+              if(checkWin('H'+di)||WINS.some(function(l){return l.every(function(i){return boardState[i]&&boardState[i]!=='X'});})){endGame('\u{1F464} Human wins!');return;}
+              if(checkDraw()){endGame('\u{1F91D} Draw!');return;}
+              setTurn('\u{1F916} Robot thinking...');
+              var m=bestRobotMove();if(m<0){endGame('\u{1F91D} Draw!');return;}
+              boardState[m]='X';
+              robotPickAndPlace(m,function(){
+                if(checkWin('X')){endGame('\u{1F916} Robot wins!');return;}
+                if(checkDraw()){endGame('\u{1F91D} Draw!');return;}
+                setTurn('\u{1F464} Human turn');
+              });
+            }
+          }
+        });
+      });
+
+      // ═══ POLLY READBACK ═══
+      var _pollyAudio=null;
+      function speakPolly(text,langCode){
+        if(!text)return;
+        if(_offlineMode){return;} // Polly disabled in offline mode
+        var voice=getLangVoice(langCode||_lastLang);
+        var engine=(voice==='Mia'||voice==='Ines')?'standard':'neural';
+        fetch('/tts/synthesize',{credentials:'same-origin',
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({text:text,voice:voice,engine:engine})
+        }).then(function(r){
+          if(!r.ok)return;
+          return r.blob();
+        }).then(function(blob){
+          if(!blob)return;
+          if(_pollyAudio){_pollyAudio.pause();_pollyAudio=null;}
+          _pollyAudio=new Audio(URL.createObjectURL(blob));
+          _pollyAudio.play();
+        }).catch(function(e){console.warn('Polly TTS error:',e);});
+      }
+
+      // ═══ INIT ═══
+      setTimeout(function(){mv(HOME_SH,HOME_EL);},200);
+      rmiLog('Game canvas initialised');
+    })();
+
+    </script>
+
+    <!-- Version badge + mic test link -->
+    <div style="display:flex;justify-content:space-between;align-items:center;max-width:900px;width:100%;margin:1rem auto;padding:0 1rem;">
+      <a href="/static/mic_test.html" style="font-size:.82rem;color:#2563eb;text-decoration:none;">🎙️ Audio Streaming Test Page</a>
+      <span id="mainVersionBadge" style="font-size:.72rem;background:#e2e8f0;color:#4a5568;padding:2px 8px;border-radius:6px;">v?</span>
+    </div>
+    <script>fetch('/version').then(r=>r.json()).then(d=>{var b=document.getElementById('mainVersionBadge');if(b)b.textContent='v'+d.version;}).catch(()=>{});</script>
+
+    <!-- Polly TTS widget -->
+    <script src="/static/tts-widget.js" onerror="window._ttsFailed=true"></script>
+    <script>
+        if (typeof PollyTTS !== 'undefined') {
+            PollyTTS.init({ mount: '#tts', baseUrl: '/tts' });
+        }
+    </script>
+
+</body>
+</html>

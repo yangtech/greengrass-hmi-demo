@@ -1,0 +1,366 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Greengrass Bedrock IPC Demo -- EC2 + Greengrass v2 core infrastructure.
+  Provisions an EC2 instance with IAM roles for Greengrass auto-provisioning
+  and a Token Exchange Role with Bedrock access. After the stack is created,
+  SSH in and run provision.sh to install and start the Greengrass nucleus.
+
+# ===========================================================================
+# Parameters
+# ===========================================================================
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: >
+      VPC to launch the EC2 instance in (e.g. your default VPC).
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: >
+      Public subnet within the VPC (instance needs internet access for
+      Greengrass provisioning and Bedrock API calls).
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 key pair for SSH access.
+
+  InstanceType:
+    Type: String
+    Default: t3.large
+    AllowedValues:
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+    Description: EC2 instance type (>=8 GB RAM recommended for Ollama)
+
+  AmiId:
+    Type: String
+    Default: ami-07a5b367e8dc8bd92
+    Description: >-
+      AMI ID for the EC2 instance. Pinned to prevent CloudFormation replacement
+      when the "latest" AL2023 AMI changes. Update manually when you want to
+      rebase to a newer AMI (accept the instance replacement)..
+
+  SshCidrIp:
+    Type: String
+    Description: >
+      CIDR block allowed to SSH into the instance (e.g. 203.0.113.42/32).
+      The default 127.0.0.1/32 blocks all external access -- you MUST change
+      this to your public IP/32 (run: curl -s ifconfig.me && echo /32).
+    Default: "127.0.0.1/32"
+    AllowedPattern: '(\d{1,3}\.){3}\d{1,3}/\d{1,2}'
+    ConstraintDescription: Must be a valid CIDR (e.g. 203.0.113.42/32).
+
+  GreengrassThingName:
+    Type: String
+    Default: GreengrassBedrock-Demo
+    Description: IoT Thing name the Greengrass installer will create.
+
+  GreengrassThingGroupName:
+    Type: String
+    Default: GreengrassBedrock-DemoGroup
+    Description: IoT Thing Group name for the Greengrass core.
+
+  GreengrassVersion:
+    Type: String
+    Default: "2.14.0"
+    Description: Greengrass nucleus version to install.
+
+# ===========================================================================
+# Resources
+# ===========================================================================
+Resources:
+
+  # -------------------------------------------------------------------------
+  # Security Group -- SSH only, no inbound web (app is localhost / SSH tunnel)
+  # -------------------------------------------------------------------------
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Greengrass Bedrock Demo - SSH access only
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SshCidrIp
+          Description: SSH from operator IP
+      Tags:
+        - Key: Name
+          Value: greengrass-bedrock-demo-sg
+
+  # -------------------------------------------------------------------------
+  # IAM Role for EC2 instance -- Greengrass v2 auto-provisioning permissions
+  # Reference: https://docs.aws.amazon.com/greengrass/v2/developerguide/provision-minimal-iam-policy.html
+  # -------------------------------------------------------------------------
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "GreengrassDemo-EC2Role-${AWS::StackName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # SSM for optional Session Manager access (no SSH key needed as backup)
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: GreengrassV2Provisioning
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # --- IoT Thing & Thing Group provisioning ---
+              - Sid: CreateThingAndGroup
+                Effect: Allow
+                Action:
+                  - iot:AddThingToThingGroup
+                  - iot:AttachPolicy
+                  - iot:AttachThingPrincipal
+                  - iot:CreateKeysAndCertificate
+                  - iot:CreatePolicy
+                  - iot:CreateRoleAlias
+                  - iot:CreateThing
+                  - iot:CreateThingGroup
+                  - iot:DescribeEndpoint
+                  - iot:DescribeRoleAlias
+                  - iot:DescribeThingGroup
+                  - iot:GetPolicy
+                  - iot:TagResource
+                  - iot:CreateJob
+                Resource: "*"
+              # --- IAM: create/get the Token Exchange Role & attach policies ---
+              - Sid: TokenExchangeRoleManagement
+                Effect: Allow
+                Action:
+                  - iam:AttachRolePolicy
+                  - iam:CreatePolicy
+                  - iam:CreateRole
+                  - iam:GetPolicy
+                  - iam:GetRole
+                  - iam:PassRole
+                Resource:
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/GreengrassV2TokenExchangeRole"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:policy/GreengrassV2TokenExchangeRoleAccess"
+                  - !GetAtt GreengrassTokenExchangeRole.Arn
+              # --- STS: the installer verifies its own identity ---
+              - Sid: GetCallerIdentity
+                Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                Resource: "*"
+              # --- Greengrass deployment (dev tools component) ---
+              - Sid: GreengrassDeployment
+                Effect: Allow
+                Action:
+                  - greengrass:CreateDeployment
+                  - greengrass:GetDeployment
+                  - greengrass:ListDeployments
+                Resource: "*"
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "GreengrassDemo-EC2Profile-${AWS::StackName}"
+      Roles:
+        - !Ref EC2InstanceRole
+
+  # -------------------------------------------------------------------------
+  # Greengrass Token Exchange Role -- assumed by the device via IoT Role Alias.
+  # This is the role components use at runtime (e.g. to call Bedrock).
+  # -------------------------------------------------------------------------
+  GreengrassTokenExchangeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: GreengrassV2TokenExchangeRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: credentials.iot.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        # Base TES policy -- logs, S3 for component artifacts
+        - PolicyName: GreengrassV2TokenExchangeRoleAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LogsAccess
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: "arn:aws:logs:*:*:*"
+              - Sid: S3ArtifactAccess
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: "arn:aws:s3:::*"
+        # Bedrock access for the demo components
+        - PolicyName: BedrockInvokeAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AllowBedrockInvokeModel
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: "arn:aws:bedrock:*::foundation-model/*"
+        # Polly TTS access for the WebApp component
+        - PolicyName: PollySynthesizeAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AllowPollySynthesizeSpeech
+                Effect: Allow
+                Action:
+                  - polly:SynthesizeSpeech
+                Resource: "*"
+
+  # -------------------------------------------------------------------------
+  # EC2 Instance -- Amazon Linux 2023, latest AMI via SSM parameter
+  # -------------------------------------------------------------------------
+  GreengrassInstance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SubnetId: !Ref SubnetId
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 30
+            VolumeType: gp3
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          # --- Greengrass Bedrock IPC Demo - EC2 bootstrap ---
+          exec > >(tee /var/log/user-data.log) 2>&1
+
+          # Signal CloudFormation on exit (success or failure)
+          function signal_cfn {
+            local exit_code=$?
+            echo "=== Signalling CloudFormation (exit=$exit_code) ==="
+            /opt/aws/bin/cfn-signal -e $exit_code \
+              --stack "${AWS::StackName}" \
+              --resource GreengrassInstance \
+              --region "${AWS::Region}"
+          }
+          trap signal_cfn EXIT
+
+          echo "=== Installing system dependencies ==="
+          dnf install -y java-11-amazon-corretto-headless python3 python3-pip unzip git
+
+          echo "=== Installing Ollama (local LLM for offline AI mode) ==="
+          curl -fsSL https://ollama.ai/install.sh | sh
+          systemctl enable ollama
+          systemctl start ollama
+          # Pull llama3.2:3b model in background (2GB download — continues after bootstrap)
+          nohup ollama pull llama3.2:3b > /var/log/ollama-pull.log 2>&1 &
+          echo "Ollama install complete, model pull started in background"
+
+          echo "=== Installing cfn-bootstrap helpers ==="
+          pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
+
+          echo "=== Creating Greengrass system user/group ==="
+          useradd --system --create-home ggc_user 2>/dev/null || true
+          groupadd --system ggc_group 2>/dev/null || true
+
+          echo "=== Configuring sudoers for Greengrass component user ==="
+          echo 'root ALL=(ggc_user:ggc_group) NOPASSWD: ALL' > /etc/sudoers.d/greengrass
+          chmod 440 /etc/sudoers.d/greengrass
+
+          echo "=== Downloading Greengrass v2 ${GreengrassVersion} ==="
+          GG_URL="https://d2s8p88vqu9w66.cloudfront.net/releases/greengrass-${GreengrassVersion}.zip"
+          mkdir -p /tmp/greengrass-install && cd /tmp/greengrass-install
+          curl -sL "$GG_URL" -o greengrass.zip
+          unzip -qo greengrass.zip -d GreengrassInstaller
+
+          echo "=== Running Greengrass installer (auto-provision) ==="
+          java -Droot="/greengrass/v2" -Dlog.store=FILE \
+            -jar /tmp/greengrass-install/GreengrassInstaller/lib/Greengrass.jar \
+            --aws-region "${AWS::Region}" \
+            --thing-name "${GreengrassThingName}" \
+            --thing-group-name "${GreengrassThingGroupName}" \
+            --thing-policy-name "GreengrassV2IoTThingPolicy" \
+            --tes-role-name "GreengrassV2TokenExchangeRole" \
+            --tes-role-alias-name "GreengrassV2TokenExchangeRoleAlias" \
+            --component-default-user ggc_user:ggc_group \
+            --provision true \
+            --setup-system-service true \
+            --deploy-dev-tools true
+
+          echo "=== Greengrass installer complete ==="
+          systemctl is-active greengrass
+          echo "=== UserData finished ==="
+      Tags:
+        - Key: Name
+          Value: !Sub "greengrass-bedrock-demo-${AWS::StackName}"
+
+  # -------------------------------------------------------------------------
+  # Elastic IP -- permanent static public IP that survives stack updates
+  # -------------------------------------------------------------------------
+  GreengrassEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref GreengrassInstance
+      Tags:
+        - Key: Name
+          Value: !Sub "greengrass-bedrock-demo-eip-${AWS::StackName}"
+
+# ===========================================================================
+# Outputs
+# ===========================================================================
+Outputs:
+  InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref GreengrassInstance
+
+  PublicIp:
+    Description: Public IP for SSH access (Elastic IP -- permanent)
+    Value: !Ref GreengrassEIP
+
+  ElasticIP:
+    Description: Permanent static public IP (Elastic IP) -- does not change on stack updates
+    Value: !Ref GreengrassEIP
+
+  SshCommand:
+    Description: SSH command to connect
+    Value: !Sub "ssh -i <your-key>.pem ec2-user@${GreengrassEIP}"
+
+  PortForwardCommand:
+    Description: SSH tunnel to reach the web app on localhost:8080
+    Value: !Sub "ssh -L 8080:localhost:8080 -i <your-key>.pem ec2-user@${GreengrassEIP}"
+
+  TokenExchangeRoleArn:
+    Description: ARN of the Greengrass Token Exchange Role (with Bedrock access)
+    Value: !GetAtt GreengrassTokenExchangeRole.Arn
+
+  GreengrassThingName:
+    Description: IoT Thing name for the Greengrass core device
+    Value: !Ref GreengrassThingName
+
+  NextSteps:
+    Description: What to do after the stack is created
+    Value: >
+      1. SSH into the instance (see SshCommand output).
+      2. Verify Greengrass: sudo systemctl status greengrass.
+      3. Copy the demo components to the instance and run: sudo bash deploy.sh.
+      4. Access the app via SSH tunnel: ssh -L 8080:localhost:8080 ... then open http://localhost:8080.
+      Note: Bedrock model access is auto-enabled (since Sep 2025). No console opt-in needed.

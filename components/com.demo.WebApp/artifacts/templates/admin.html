@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Administration &mdash; IoT Greengrass HMI Demo</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f0f4f8;
+            color: #1a202c;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-bottom: 3rem;
+        }
+
+        /* ── Dark navy header ── */
+        header {
+            width: 100%;
+            background: #1a237e;
+            padding: 1.5rem 1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+        header h1 { font-size: 1.5rem; font-weight: 700; color: #fff; letter-spacing: -0.02em; }
+        header p { margin-top: 0.35rem; font-size: 0.85rem; color: #c5cae9; }
+
+        .header-actions {
+            position: absolute;
+            top: 1.4rem;
+            right: 1.25rem;
+            display: flex;
+            gap: 0.75rem;
+        }
+        .header-actions a, .header-actions button {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #e8eaf6;
+            text-decoration: none;
+            background: rgba(255,255,255,0.12);
+            border: none;
+            border-radius: 8px;
+            padding: 0.4rem 0.8rem;
+            cursor: pointer;
+        }
+        .header-actions a:hover, .header-actions button:hover { background: rgba(255,255,255,0.22); }
+
+        main {
+            width: 100%;
+            max-width: 900px;
+            padding: 2rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+            padding: 1.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.1rem;
+        }
+        .card h2 {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #1a237e;
+        }
+
+        .cloud-status {
+            font-size: 0.78rem;
+            font-weight: 700;
+            border-radius: 999px;
+            padding: 0.3rem 0.8rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            align-self: flex-start;
+        }
+        .cloud-status.online { color: #065f46; background: #d1fae5; }
+        .cloud-status.offline { color: #92400e; background: #fef9c3; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        thead th {
+            text-align: left;
+            font-size: 0.72rem;
+            color: #718096;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            padding: 0.5rem 0.6rem;
+            border-bottom: 1.5px solid #e2e8f0;
+        }
+        tbody td {
+            padding: 0.65rem 0.6rem;
+            border-bottom: 1px solid #edf2f7;
+            color: #1a202c;
+        }
+        tbody tr:last-child td { border-bottom: none; }
+
+        .badge {
+            font-size: 0.72rem;
+            font-weight: 700;
+            border-radius: 999px;
+            padding: 0.15rem 0.55rem;
+            display: inline-block;
+        }
+        .badge.role-admin { color: #7c2d12; background: #ffedd5; }
+        .badge.role-advanced { color: #1e40af; background: #dbeafe; }
+        .badge.role-basic { color: #374151; background: #e5e7eb; }
+        .badge.source-cognito { color: #3730a3; background: #e0e7ff; }
+        .badge.source-local { color: #065f46; background: #d1fae5; }
+
+        .btn-delete {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #b91c1c;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: 0.35rem 0.7rem;
+            cursor: pointer;
+        }
+        .btn-delete:hover { background: #fee2e2; }
+        .btn-delete:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .form-row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+        .field { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; min-width: 140px; }
+        .field label {
+            font-size: 0.72rem;
+            color: #718096;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+        .field input, .field select {
+            padding: 0.65rem 0.85rem;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            color: #1a202c;
+            outline: none;
+            background: #fff;
+        }
+        .field input:focus, .field select:focus { border-color: #4a90d9; }
+
+        .btn-yellow {
+            background: #f5c518;
+            color: #111;
+            border: none;
+            border-radius: 10px;
+            padding: 0.65rem 1.4rem;
+            font-size: 0.9rem;
+            font-weight: 700;
+            cursor: pointer;
+            align-self: flex-end;
+        }
+        .btn-yellow:hover { background: #e0b010; }
+        .btn-yellow:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .create-disabled-note {
+            font-size: 0.8rem;
+            color: #92400e;
+            background: #fef9c3;
+            border-radius: 8px;
+            padding: 0.55rem 0.8rem;
+            display: none;
+        }
+        .create-disabled-note.visible { display: block; }
+
+        .error-msg {
+            font-size: 0.85rem;
+            color: #b91c1c;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: 0.6rem 0.8rem;
+            display: none;
+        }
+        .error-msg.visible { display: block; }
+
+        .success-msg {
+            font-size: 0.85rem;
+            color: #065f46;
+            background: #d1fae5;
+            border: 1px solid #a7f3d0;
+            border-radius: 8px;
+            padding: 0.6rem 0.8rem;
+            display: none;
+        }
+        .success-msg.visible { display: block; }
+
+        .empty-note { color: #a0aec0; font-style: italic; font-size: 0.88rem; padding: 0.5rem 0.6rem; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-actions">
+            <a href="/">&larr; Back to game</a>
+            <button id="logoutBtn" type="button">Log out</button>
+        </div>
+        <h1>User Administration</h1>
+        <p>Cognito + local account management</p>
+    </header>
+
+    <main>
+        <div class="card">
+            <h2>Users</h2>
+            <div class="cloud-status offline" id="cloudStatus">Checking cloud status&hellip;</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Source</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="usersTableBody">
+                    <tr><td colspan="4" class="empty-note">Loading users&hellip;</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Create Local User</h2>
+            <div class="create-disabled-note" id="createDisabledNote">
+                &#9888;&#65039; Local user creation is only available while the cloud (Cognito) is unreachable.
+            </div>
+            <div class="error-msg" id="createError"></div>
+            <div class="success-msg" id="createSuccess"></div>
+            <form id="createForm">
+                <div class="form-row">
+                    <div class="field">
+                        <label for="newUsername">Username</label>
+                        <input type="text" id="newUsername" name="username" required>
+                    </div>
+                    <div class="field">
+                        <label for="newPassword">Password</label>
+                        <input type="password" id="newPassword" name="password" required>
+                    </div>
+                    <div class="field">
+                        <label for="newRole">Role</label>
+                        <select id="newRole" name="role">
+                            <option value="basic">basic</option>
+                            <option value="advanced">advanced</option>
+                            <option value="admin">admin</option>
+                        </select>
+                    </div>
+                    <div class="field" style="flex: 0;">
+                        <label>&nbsp;</label>
+                        <button type="submit" class="btn-yellow" id="createBtn">Create User</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <script>
+        const usersTableBody = document.getElementById('usersTableBody');
+        const cloudStatus = document.getElementById('cloudStatus');
+        const createDisabledNote = document.getElementById('createDisabledNote');
+        const createForm = document.getElementById('createForm');
+        const createBtn = document.getElementById('createBtn');
+        const createError = document.getElementById('createError');
+        const createSuccess = document.getElementById('createSuccess');
+        let cloudAvailable = true;
+
+        function roleBadge(role) {
+            return `<span class="badge role-${role}">${role}</span>`;
+        }
+        function sourceBadge(source) {
+            return `<span class="badge source-${source}">${source}</span>`;
+        }
+
+        async function loadUsers() {
+            try {
+                const res = await fetch('/admin/users', { credentials: 'same-origin' });
+                if (res.status === 401 || res.status === 403) {
+                    window.location.href = '/login';
+                    return;
+                }
+                const data = await res.json();
+                cloudAvailable = !!data.cloud_available;
+
+                cloudStatus.classList.toggle('online', cloudAvailable);
+                cloudStatus.classList.toggle('offline', !cloudAvailable);
+                cloudStatus.textContent = cloudAvailable
+                    ? '\u2601\ufe0f Cloud online \u2014 Cognito is the source of truth'
+                    : '\u26a0\ufe0f Offline \u2014 local accounts active';
+
+                createBtn.disabled = cloudAvailable;
+                createDisabledNote.classList.toggle('visible', cloudAvailable);
+
+                const users = data.users || [];
+                if (users.length === 0) {
+                    usersTableBody.innerHTML = '<tr><td colspan="4" class="empty-note">No users found.</td></tr>';
+                    return;
+                }
+
+                usersTableBody.innerHTML = users.map(u => `
+                    <tr>
+                        <td>${u.username}</td>
+                        <td>${roleBadge(u.role)}</td>
+                        <td>${sourceBadge(u.source)}</td>
+                        <td>
+                            ${u.source === 'local'
+                                ? `<button class="btn-delete" data-username="${u.username}">Delete</button>`
+                                : ''}
+                        </td>
+                    </tr>
+                `).join('');
+
+                usersTableBody.querySelectorAll('.btn-delete').forEach(btn => {
+                    btn.addEventListener('click', () => deleteUser(btn.dataset.username));
+                });
+            } catch (err) {
+                usersTableBody.innerHTML = '<tr><td colspan="4" class="empty-note">Failed to load users.</td></tr>';
+            }
+        }
+
+        async function deleteUser(username) {
+            if (!confirm(`Delete local user "${username}"? This cannot be undone.`)) return;
+            try {
+                const res = await fetch(`/admin/users/${encodeURIComponent(username)}`, {
+                    method: 'DELETE',
+                    credentials: 'same-origin',
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.error || 'Failed to delete user.');
+                    return;
+                }
+                loadUsers();
+            } catch (err) {
+                alert('Could not reach the server.');
+            }
+        }
+
+        createForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            createError.classList.remove('visible');
+            createSuccess.classList.remove('visible');
+
+            const username = document.getElementById('newUsername').value.trim();
+            const password = document.getElementById('newPassword').value;
+            const role = document.getElementById('newRole').value;
+
+            try {
+                const res = await fetch('/admin/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ username, password, role }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    createError.textContent = data.error || 'Failed to create user.';
+                    createError.classList.add('visible');
+                    return;
+                }
+                createSuccess.textContent = `Local user "${data.username}" created.`;
+                createSuccess.classList.add('visible');
+                createForm.reset();
+                loadUsers();
+            } catch (err) {
+                createError.textContent = 'Could not reach the server.';
+                createError.classList.add('visible');
+            }
+        });
+
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            try {
+                await fetch('/logout', { method: 'POST', credentials: 'same-origin' });
+            } finally {
+                window.location.href = '/login';
+            }
+        });
+
+        loadUsers();
+    </script>
+</body>
+</html>

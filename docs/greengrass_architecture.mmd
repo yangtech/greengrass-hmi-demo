@@ -1,0 +1,22 @@
+flowchart TB
+    Browser["Browser (your laptop)\nhttp://localhost:8080 via SSH tunnel"]
+
+    subgraph EC2["EC2 instance 18.206.227.206 (Greengrass v2 core)"]
+        Flask["com.demo.WebApp\nFlask server :8080 (/ask, /events SSE)"]
+        Counter["com.demo.WordCounter (headless)\nlen(text.split())"]
+        Nucleus["Greengrass Nucleus\nIPC local pub/sub broker"]
+    end
+
+    Bedrock["Amazon Bedrock\namazon.nova-lite-v1:0"]
+    TES["Token Exchange Service\nGreengrassV2TokenExchangeRole"]
+
+    Browser -->|"1. POST /ask {question}"| Flask
+    Flask -->|"2. InvokeModel (creds via TES)"| Bedrock
+    TES -.->|creds| Flask
+    Bedrock -->|"3. answer text"| Flask
+    Flask -->|"4. return answer"| Browser
+    Flask -->|"5. publish to demo/answer (topic A)"| Nucleus
+    Nucleus -->|"6. deliver topic A"| Counter
+    Counter -->|"7. publish to demo/wordcount (topic B)"| Nucleus
+    Nucleus -->|"8. deliver topic B"| Flask
+    Flask -->|"9. push count via SSE"| Browser
